@@ -1,0 +1,22 @@
+---
+- hosts: all
+  become: true
+  tasks:
+  
+  - name: Install packages on the system and update the cache
+    apt:
+      name:
+        - apache2
+        - libapache2-mod-php
+      state: latest
+      update_cache: yes
+    when: ansible_distribution_version == "Ubuntu"
+
+  - name: Install packages on the system(CentOS) and update the cache
+    dnf:
+      name:
+        - httpd
+        - php
+      state: latest
+      update_cache: yes
+    when: ansible_distribution_version == "CentOS"

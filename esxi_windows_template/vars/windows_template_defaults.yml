@@ -9,17 +9,17 @@ windows_template_defaults:
   #net_bridge: "vmbr2"
   admin_password: 'AnsibleReady!'
   time_zone: 'W. Europe Standard Time'
-  registered_to: 'ORKLA IT AS'
-  organization: 'ORKLA'
+  registered_to: ''
+  organization: ''
   provisioning_script: 'provision.ps1'
   guest_id: "windows9Server64Guest"
 
 vcenter:
   hostname: 'vcenter01.home.lab'
   username: 'administrator@vsphere.local'
-  password: 'P@ssw0rd'
-  datacenter: 'AadhyA'
-  cluster: 'AbhignyA'
+  password: ''
+  datacenter: ''
+  cluster: ''
   datastore: 'vmware-vol1'
   network: 'vlan33'
   vm_folder : 'Templates'

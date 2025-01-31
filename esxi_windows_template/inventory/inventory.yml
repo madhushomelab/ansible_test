@@ -1,0 +1,9 @@
+---
+ansible_host:
+  hosts:
+    p-vlab-dhs-001.vlabacademy.local:
+      ansible_host: 10.10.10.101
+  vars:
+    ansible_user: deepak
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_python_interpreter: auto_silent

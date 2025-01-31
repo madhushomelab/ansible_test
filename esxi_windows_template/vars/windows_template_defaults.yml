@@ -1,0 +1,26 @@
+---
+windows_template_defaults:
+  os_type: win10
+  cpus: 2
+  sockets: 2
+  memory: 4096
+  disk: 50
+  tools_iso: '[vmware-vol1] iso/windows.iso'
+  #net_bridge: "vmbr2"
+  admin_password: 'AnsibleReady!'
+  time_zone: 'W. Europe Standard Time'
+  registered_to: 'ORKLA IT AS'
+  organization: 'ORKLA'
+  provisioning_script: 'provision.ps1'
+  guest_id: "windows9Server64Guest"
+
+vcenter:
+  hostname: 'vcenter01.home.lab'
+  username: 'administrator@vsphere.local'
+  password: 'P@ssw0rd'
+  datacenter: 'AadhyA'
+  cluster: 'AbhignyA'
+  datastore: 'vmware-vol1'
+  network: 'vlan33'
+  vm_folder : 'Templates'
+  datastore_root_folder: 'Templates'

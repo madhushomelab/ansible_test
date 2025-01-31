@@ -1,0 +1,17 @@
+- name: 'Provision Windows Virtual Machine Templates'
+  hosts: 'localhost'
+  gather_facts: false
+  become: true
+
+  vars_files:
+    - ./vars/windows_template_definitions.yml
+    - ./vars/windows_template_defaults.yml
+
+  tasks:
+    - name: Load template definitions
+      ansible.builtin.include_tasks: "./tasks/esxi_deploy_windows_template.yml"
+      vars:
+        template: "{{ item }}"
+      with_items: "{{ definitions }}"
+      loop_control:
+        label: "{{ item.name }}"

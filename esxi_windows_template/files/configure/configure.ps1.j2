@@ -1,0 +1,97 @@
+
+#region Script Declarations
+
+[string]$configuration_folder = "c:\windows\system32\sysprep\configure"
+
+# Set this to $true if verbose logging is required on the output window
+# Accepted values are $true and $false
+[bool] $VerboseLogging = $true
+
+# Set this to $true if a log file is to be created during the execution
+# Accepted values are $true and $false
+[bool] $GenerateLogFile = $true
+
+# Name of the logfile to be created
+# eg: /root/powershell/script.log
+[string] $LogLocation = "c:\windows\deployment_log.txt"
+
+#endregion Script Declarations	
+
+function WriteLog () {
+
+    Param ( [byte]$Type, [string]$Message )
+
+    $TimeStamp = Get-Date -Format "dd.MMM.yyyy HH:mm:ss"
+    $Time = Get-Date -Format "HH:mm:ss"
+
+    if ($Type -eq 1) {
+        if ($VerboseLogging) { Write-Host "[INFO] - $Time - $Message" -ForegroundColor Green }
+        $Global:LogFileData += "[INFO] - $TimeStamp - $Message"
+        $Global:LogFileData += "`r`n"
+    }
+    if ($Type -eq 2) {
+        if ($VerboseLogging) { Write-Host "[WARNING] - $Time - $Message" -ForegroundColor Yellow }
+        $Global:LogFileData += "[WARNING] - $TimeStamp - $Message"
+        $Global:LogFileData += "`r`n"
+    }
+    if ($Type -eq 3) {
+        if ($VerboseLogging) { Write-Host "[ERROR] - $Time - $Message" -ForegroundColor Red }
+        $Global:LogFileData += "[ERROR] - $TimeStamp - $Message"
+        $Global:LogFileData += "`r`n"
+    }
+}
+
+function post_deployment() {
+    WriteLog -Type 1 -Message "Disabling IPv6 on all adapters"
+    Disable-NetAdapterBinding -Name "*" -ComponentID ms_tcpip6
+
+    WriteLog -Type 1 -Message "Scheduling cleanup on reboot"
+    Set-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name '!cleanup' -Value "c:\WINDOWS\system32\WindowsPowerShell\v1.0\powershell.exe -noexit -command 'Remove-Item -Recurse -Force $configuration_folder'"
+
+    WriteLog -Type 1 -Message "Blessing and rebooting the template"
+    shutdown /r /t 5
+}
+
+#region Script Header
+
+<# --- Generate runtime log data --- #>
+[string] $TimeStamp = Get-Date -Format "dd.MMM.yyyy HH:mm:ss"
+
+WriteLog -Type 1 -Message "Template provisioning started at $TimeStamp on $(hostname)"
+WriteLog -Type 1 -Message "Gathering runtime information"
+WriteLog -Type 1 -Message "ErrorActionPreference has been set to $ErrorActionPreference"
+WriteLog -Type 1 -Message "Starting execution timer"
+$ExecutionTimer = [Diagnostics.Stopwatch]::StartNew() <# --- Starts a timer to track the total execution time of the script --- #>
+
+#endregion Script Header
+
+post_deployment
+
+#region Script Footer
+
+WriteLog -Type 1 -Message "Template provisioning complete"
+WriteLog -Type 1 -Message "Stopping execution timer and calculating script run duration"
+$ExecutionTimer.Stop() <# --- Stops the timer to track the total execution time of the script --- #>
+$executionTime = $ExecutionTimer.Elapsed <# --- Calculate the total time taken for script execution --- #>
+WriteLog -Type 1 -Message "Script execution complete. Total execution time is $($executionTime.hours):$($executionTime.minutes):$($executionTime.seconds)"
+
+if ($GenerateLogFile) {
+    WriteLog -Type 1 -Message "Generating Execution Log"
+    try {
+
+        if (!(Test-Path -path $LogLocation)) { New-Item $LogLocation -Type Directory }
+
+        $LogFile = Join-Path $LogLocation "$ScriptShortName.log"
+        
+        if (Test-Path -path $LogFile) { Remove-Item $LogFile }
+
+        $Global:LogFileData > $LogFile
+        WriteLog -Type 1 -Message "Execution Log saved as $LogFile"
+    }
+    catch {
+        WriteLog -Type 3 -Message "There was a problem in saving the Execution Log"
+        WriteLog -Type 3 $_
+    }
+}
+
+#endregion Script Footer

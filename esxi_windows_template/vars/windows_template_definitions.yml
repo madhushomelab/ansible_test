@@ -1,0 +1,13 @@
+---
+  definitions:
+    - name: OSL20-W2K22-STD-Template
+      os_iso: '[iso-images] Server2022_new.iso'
+      image: 'Windows Server 2022 SERVERSTANDARD'
+      unattend_template: 'server_2022_autounattend.xml.j2'
+      provisioning_script: 'provision.ps1'
+      hostname: 'tpl-windows-srv'
+      product_key: 'YDFWN-MJ9JR-3DYRK-FXXRW-78VHK'
+      network_ip_address: 10.1.33.90
+      network_subnet: 255.255.255.0
+      network_gateway: 10.1.33.1
+      network_dns_server: 192.168.1.100

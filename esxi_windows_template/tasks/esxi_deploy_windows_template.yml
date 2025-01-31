@@ -1,0 +1,225 @@
+---
+- name: Installing required packages for template creation
+  apt:
+   pkg:
+    - genisoimage
+    - pip
+   state: latest
+   update_cache: true
+
+- name: Installing required dependencies for template creation
+  ansible.builtin.shell: |
+    pip install pyvim --break-system-packages
+    pip install pyvmomi --break-system-packages
+
+
+- name: Delete virtual machine template {{template.name}} if exists
+  community.vmware.vmware_guest:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    cluster: '{{ vcenter.cluster }}'
+    name: '{{template.name}}'
+    state: absent
+
+
+- name: Create temp directories for {{template.name}}
+  file:
+    path: "{{ folder }}"
+    state: directory
+  loop:
+    - /tmp/{{template.name}}
+    - /tmp/{{template.name}}/iso
+    - /tmp/{{template.name}}/provision
+  loop_control:
+    loop_var: folder
+
+- name: Populate and copy {{template.unattend_template}}
+  template:
+    src: ./files/unattend/{{template.unattend_template}}
+    dest: /tmp/{{template.name}}/autounattend.xml
+
+- name: Populate and copy provisioning templates
+  template: 
+    src: '{{ outer_item }}'
+    dest: "/tmp/{{ template.name }}/provision/{{ outer_item | basename | replace('.j2', '') }}"
+  with_fileglob:
+    - './files/provision/*.j2'
+  loop_control:
+    loop_var: outer_item
+
+- name: Create configuration templates directory for {{template.name}}
+  file:
+    path: /tmp/{{template.name}}/configure
+    state: directory
+
+- name: Populate and copy configuration templates for {{template.name}}
+  template: 
+    src: '{{ outer_item }}'
+    dest: "/tmp/{{ template.name }}/configure/{{ outer_item | basename | replace('.j2', '') }}"
+  with_fileglob:
+    - './files/configure/*.j2'
+  loop_control:
+    loop_var: outer_item
+
+# - name: Copy additional files that are required for the provisioning ISO
+#   copy:
+#     src: iso-files/
+#     dest: /tmp/{{template.name}}/
+
+- name: Create payload ISO file for {{template.name}}
+  become: true
+  command: "genisoimage -J -r -o /tmp/{{template.name}}/iso/{{template.name}}-provision.iso /tmp/{{template.name}}/"
+  register: iso_created
+
+
+- name: Create a vm folder to host templates
+  community.vmware.vcenter_folder:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter_name: '{{ vcenter.datacenter }}'
+    folder_name: '{{ vcenter.vm_folder }}'
+    folder_type: 'vm'
+    state: 'present'
+
+- name: Create template directory for {{template.name}} in {{ vcenter.datastore }}
+  community.vmware.vsphere_file:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    datastore: '{{ vcenter.datastore }}'
+    path: '{{ vcenter.datastore_root_folder }}/{{ template.name }}'
+    state: 'directory'
+
+- name: Copy payload ISO file for {{template.name}} to the datastore
+  community.vmware.vsphere_copy:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    datastore: '{{ vcenter.datastore }}'
+    src: '/tmp/{{template.name}}/iso/{{template.name}}-provision.iso'
+    path: '{{ vcenter.datastore_root_folder }}/{{ template.name }}/{{template.name}}-provision.iso'
+
+- name: Create Virtual Machine {{template.name}}
+  community.vmware.vmware_guest:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    cluster: '{{ vcenter.cluster }}'
+    state: poweredon
+    folder: '{{ vcenter.vm_folder }}'
+    name: '{{template.name}}'
+    guest_id: "{{ windows_template_defaults.guest_id }}"
+    disk:
+      - size_gb: '{{template.disk | default(windows_template_defaults.disk)}}'
+        type: thin
+        autoselect_datastore: true
+    hardware:
+      boot_firmware: bios
+      memory_mb: '{{template.memory | default(windows_template_defaults.memory)}}'
+      num_cpus: '{{template.cpus | default(windows_template_defaults.cpus)}}'
+      scsi: paravirtual
+    cdrom:
+      - controller_number: 0
+        controller_type: "sata"
+        unit_number: 0
+        type: iso
+        iso_path: '{{template.os_iso}}'
+        state: present
+      - controller_number: 0
+        controller_type: "sata"
+        unit_number: 1
+        type: iso
+        iso_path: '[{{ vcenter.datastore }}] {{ vcenter.datastore_root_folder }}/{{ template.name }}/{{template.name}}-provision.iso'
+        state: present
+      - controller_number: 0
+        controller_type: "sata"
+        unit_number: 2
+        type: iso
+        iso_path: '{{template.tools_iso | default(windows_template_defaults.tools_iso)}}'
+        state: present
+    networks:
+      - name: '{{ vcenter.network }}'
+        device_type: vmxnet3
+
+
+- name: Waiting for provisioning to complete. Timeout is 120 minutes.
+  community.vmware.vmware_guest_info:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    name: '{{template.name}}'
+  register: vm_info
+  until: vm_info.instance.hw_power_status == 'poweredOff'
+  retries: 24
+  delay: 300 # Seconds
+
+- name: Detach cdrom drives from {{template.name}}
+  community.vmware.vmware_guest:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    cluster: '{{ vcenter.cluster }}'
+    folder: '{{ vcenter.vm_folder }}'
+    name: '{{template.name}}'
+    cdrom:
+      - controller_number: 0
+        controller_type: "sata"
+        unit_number: 0
+        state: absent
+      - controller_number: 0
+        controller_type: "sata"
+        unit_number: 1
+        state: absent
+      - controller_number: 0
+        controller_type: "sata"
+        unit_number: 2
+        state: absent
+
+- name: Detach cdrom sata controller from {{template.name}}
+  community.vmware.vmware_guest_controller:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    folder: '{{ vcenter.vm_folder }}'
+    name: '{{template.name}}'
+    controllers:
+      - state: absent
+        controller_number: 0
+        type: sata
+
+- name: Convert {{template.name}} to template
+  community.vmware.vmware_guest:
+    validate_certs: false
+    hostname: '{{ vcenter.hostname }}'
+    username: '{{ vcenter.username }}'
+    password: '{{ vcenter.password }}'
+    datacenter: '{{ vcenter.datacenter }}'
+    name: '{{template.name}}'
+    is_template: true
+
+
+- name: Cleanup temp files used for ISO build
+  file:
+    path: /tmp/{{template.name}}
+    state: absent
+
+- name: Done
+  debug:
+    msg: Template build {{template.name}} complete.
